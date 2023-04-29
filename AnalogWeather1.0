@@ -1,0 +1,464 @@
+
+
+#include "string.h"
+#include "WiFiEsp.h"
+#include <Adafruit_Sensor.h>
+#include <DHT.h>
+#include <DHT_U.h>
+#include <Adafruit_BMP085.h>
+#include "WiFiEspUdp.h"
+
+#include <Wire.h>
+#include <Adafruit_BMP085.h>
+Adafruit_BMP085 bmp;
+
+    const float mid_p = 1013.25; // Sea level atmospheric pressure
+    int i;                    // For loop counter
+    int j;  
+              // -------//---------
+    long p;                   // Current pressure in Pa (1Pa = 0.0075006376 mmHg)
+    long sum_p6;              // The sum of the results of pressure measurements for 6 sec.
+    long mini_p6;             // Minimum pressure in 6 seconds
+    long maxi_p6;             // Maximum pressure in 6 sec. 
+    float dif_pm;             // Difference of pressure - current and average (mid_p) in mm Hg.
+    float dif_p1;             // The difference in pressure - current and what was 1 hour ago
+    float dif_p3;             // The difference in pressure - current and what was 3 hours ago
+    float dif_p10;            // The difference in pressure - current and what was 10 hours ago
+    boolean flag;             // Flag allowing to output dif_p1, dif_p3, dif_p10 with two additional spaces
+    long sum_p[60];           // Array for storing 60 sums p. Each amount - 10,000 measurements in 10 minutes
+    
+   
+
+// Define Constants
+// Max string length may have to be adjusted depending on data to be extracted
+#define MAX_STRING_LEN  25
+#define DHTPIN 12
+#define DHTTYPE    DHT11
+
+
+// Setup vars
+char tagStr[MAX_STRING_LEN] = "";
+char dataStr[MAX_STRING_LEN] = "";
+char tmpStr[MAX_STRING_LEN] = "";
+char endTag[3] = {'<', '/', '\0'};
+int len;
+int ledPin6 = 6;
+int ledPin3 = 3;
+int ledPin9 = 9;
+int ledPin11 = 11;
+DHT dht(DHTPIN, DHTTYPE);
+uint32_t delayMS;
+String inputString = "";
+float temp;
+float pressure;
+float hum;
+int timeutc;
+
+
+
+
+
+// Flags to differentiate XML tags from document elements (ie. data)
+boolean tagFlag = false;
+boolean dataFlag = false;
+
+
+// Emulate Serial1 on pins 6/7 if not present
+#ifndef HAVE_HWSERIAL1
+#include "SoftwareSerial.h"
+SoftwareSerial Serial1(4, 5); // RX, TX
+#endif
+
+char ssid[] = "ssid";            // your network SSID (name)
+char pass[] = "pass";        // your network password
+int status = WL_IDLE_STATUS;     // the Wifi radio's status
+
+
+char timeServer[] = "time.nist.gov";  // NTP server
+unsigned int localPort = 2390;        // local port to listen for UDP packets
+
+const int NTP_PACKET_SIZE = 48;  // NTP timestamp is in the first 48 bytes of the message
+const int UDP_TIMEOUT = 2000;    // timeout in miliseconds to wait for an UDP packet to arrive
+
+byte packetBuffer[NTP_PACKET_SIZE];
+
+// Start ethernet client
+WiFiEspUDP Udp;
+
+
+void setup()
+{
+
+Serial.println("Startup Sequence");
+//Wipe the needles back and forth on Startup
+
+  // fade in from min to max in increments of 5 points:
+  for (int fadeValue = 0 ; fadeValue <= 255; fadeValue += 5) {
+    // sets the value (range from 0 to 255):
+    analogWrite(ledPin6, fadeValue);
+    // wait for 30 milliseconds to see the dimming effect
+    delay(30);
+  }
+
+
+  // fade out from max to min in increments of 5 points:
+  for (int fadeValue = 255 ; fadeValue >= 0; fadeValue -= 5) {
+    // sets the value (range from 0 to 255):
+    analogWrite(ledPin6, fadeValue);
+    // wait for 30 milliseconds to see the dimming effect
+    delay(30);
+  }
+  // fade in from min to max in increments of 5 points:
+  for (int fadeValue = 0 ; fadeValue <= 255; fadeValue += 5) {
+    // sets the value (range from 0 to 255):
+    analogWrite(ledPin3, fadeValue);
+    // wait for 30 milliseconds to see the dimming effect
+    delay(30);
+  }
+
+  // fade out from max to min in increments of 5 points:
+  for (int fadeValue = 255 ; fadeValue >= 0; fadeValue -= 5) {
+    // sets the value (range from 0 to 255):
+    analogWrite(ledPin3, fadeValue);
+    // wait for 30 milliseconds to see the dimming effect
+    delay(30);
+  }
+  // fade in from min to max in increments of 5 points:
+  for (int fadeValue = 0 ; fadeValue <= 255; fadeValue += 5) {
+    // sets the value (range from 0 to 255):
+    analogWrite(ledPin9, fadeValue);
+    // wait for 30 milliseconds to see the dimming effect
+    delay(30);
+  }
+
+  // fade out from max to min in increments of 5 points:
+  for (int fadeValue = 255 ; fadeValue >= 0; fadeValue -= 5) {
+    // sets the value (range from 0 to 255):
+    analogWrite(ledPin9, fadeValue);
+    // wait for 30 milliseconds to see the dimming effect
+    delay(30);
+  }
+  // fade in from min to max in increments of 5 points:
+  for (int fadeValue = 0 ; fadeValue <= 255; fadeValue += 5) {
+    // sets the value (range from 0 to 255):
+    analogWrite(ledPin11, fadeValue);
+    // wait for 30 milliseconds to see the dimming effect
+    delay(30);
+  }
+
+  // fade out from max to min in increments of 5 points:
+  for (int fadeValue = 255 ; fadeValue >= 0; fadeValue -= 5) {
+    // sets the value (range from 0 to 255):
+    analogWrite(ledPin11, fadeValue);
+    // wait for 30 milliseconds to see the dimming effect
+    delay(30);
+  }
+  for (int fadeValue = 0 ; fadeValue <= 255; fadeValue += 5) {
+    // sets the value (range from 0 to 255):
+    analogWrite(ledPin3, fadeValue);
+    analogWrite(ledPin6, fadeValue);
+    analogWrite(ledPin9, fadeValue);
+    analogWrite(ledPin11, fadeValue);
+    // wait for 30 milliseconds to see the dimming effect
+    delay(30);
+  }
+  
+    // fade out from max to min in increments of 5 points:
+  for (int fadeValue = 255 ; fadeValue >= 0; fadeValue -= 5) {
+    // sets the value (range from 0 to 255):
+    analogWrite(ledPin3, fadeValue);
+    analogWrite(ledPin6, fadeValue);
+    analogWrite(ledPin9, fadeValue);
+    analogWrite(ledPin11, fadeValue);
+    // wait for 30 milliseconds to see the dimming effect
+    delay(30);
+  }
+ 
+  
+pinMode(14, OUTPUT);
+
+  digitalWrite(14, HIGH);   
+  delay(1000);              
+  digitalWrite(14, LOW);   
+  delay(1000);
+  digitalWrite(14, HIGH);   
+  delay(1000);              
+  digitalWrite(14, LOW);   
+  delay(1000);   
+  pinMode(15, OUTPUT);
+
+  digitalWrite(15, HIGH);   
+  delay(1000);              
+  digitalWrite(15, LOW);   
+  delay(1000);
+  digitalWrite(15, HIGH);   
+  delay(1000);              
+  digitalWrite(15, LOW);   
+  delay(1000);
+  pinMode(16, OUTPUT);
+
+  digitalWrite(16, HIGH);   
+  delay(1000);              
+  digitalWrite(16, LOW);   
+  delay(1000);
+  digitalWrite(16, HIGH);   
+  delay(1000);              
+  digitalWrite(16, LOW);   
+  delay(1000);
+  pinMode(17, OUTPUT);
+
+  digitalWrite(17, HIGH);   
+  delay(1000);              
+  digitalWrite(17, LOW);   
+  delay(1000);
+  digitalWrite(17, HIGH);   
+  delay(1000);              
+  digitalWrite(17, LOW);   
+  delay(1000);
+
+
+  delay(10000);
+  //Startup Serial 
+ Serial.begin(9600);
+  Serial1.begin(9600);
+ Serial.println("connecting...");
+ WiFi.init(&Serial1);
+  dht.begin();
+  
+for(i=0; i<60; i++)               // Zeroing the array sum_p [i]
+    sum_p[i]=0;      
+    
+  if (!bmp.begin()) {               // Pressure sensor defective
+  Serial.print("BMP-180 DAMAGED!");
+  while (1) {} 
+	
+  
+}
+ 
+
+  //check for the presence of the shield
+  if (WiFi.status() == WL_NO_SHIELD) {
+    Serial.println("WiFi shield not present");
+    // don't continue
+    while (true);
+  }
+   // attempt to connect to WiFi network
+  while ( status != WL_CONNECTED) {
+    Serial.print("Attempting to connect to WPA SSID: ");
+    Serial.println(ssid);
+   //Connect to WPA/WPA2 network
+    status = WiFi.begin(ssid, pass);
+  }
+
+  // you're connected now, so print out the data
+  Serial.println("You're connected to the network");
+  Udp.begin(localPort);  
+  
+ 
+
+}
+
+
+void loop() {
+    // Delay between measurements.
+  delay(delayMS);
+  sum_p[0] = 0;                     // In the for loop for j in sum_p [0] we will accumulate the sum of 10,000 measurements
+  for (j=0;j<100;j++) {             // External cycle - we carry out 10,000 measurements in 600 seconds
+
+    sum_p6=0;                       // Preparing data for the inner loop
+    mini_p6=110000;                 // Knowingly more than possible
+    maxi_p6= 80000;                 // Deliberately less than possible
+  
+    
+      for(i=0;i<102;i++) {
+
+  
+  p=bmp.readPressure();
+        //Serial.println(p);                
+        if (p<mini_p6)              // Find the max and min results to discard later
+         mini_p6=p;
+        if (p>maxi_p6)
+         maxi_p6=p;  
+        sum_p6=sum_p6 + p;
+        delay(18);  
+      }
+        sum_p[0]=sum_p[0]+sum_p6-maxi_p6-mini_p6;
+    
+
+} 
+dif_p1 = (sum_p[0] - sum_p[6]) * 1.0E-6; 
+    dif_p3 = (sum_p[0] - sum_p[18])* 1.0E-6 ; 
+    dif_p10 = (sum_p[0] - sum_p[59])* 1.0E-6 ;
+    
+    flag=false;                     // no spaces can be inserted into the 2nd line
+    if (abs(dif_p1)<9.95 and abs(dif_p3)<9.95 and abs(dif_p10)<9.95)
+      flag=true;                    // If dif_p occupy 4 familiar spaces, then spaces can be inserted
+    if (sum_p[59]==0)               // If there is no data for dif_p10 yet, then spaces can be inserted
+      flag=true;
+       
+  // We output dif_p1, dif_p3 and dif_p10 to the 2nd (bottom) line of the indicator
+
+    delay(1000);
+    pressure= sum_p[0] * 1.0E-6;
+    Serial.print(pressure);
+    Serial.print("mb");
+            // Normalise values based on testing of needles on voltmeters 
+        float pressurenormalized = (((pressure - 961)/100) * 253.0);
+        round(pressurenormalized);        
+         int pressurepin = pressurenormalized;
+                 //read data on meter 3  
+        analogWrite(ledPin9,pressurepin);
+  
+    // Get temperature event and print its value.
+  //sensors_event_t event;
+  //dht.temperature().getEvent(&event);
+
+    
+    temp= dht.readTemperature();
+          // Normalise values based on testing of needles on voltmeters 
+        float tempnormalized = ((((float(temp)))/50) * 247.0);
+        round(tempnormalized);
+        int temppin = tempnormalized;
+        Serial.print("Temp:");
+        Serial.print(temp);
+        Serial.print('\n');
+        Serial.print("temppin:");
+        Serial.print(temppin);
+        Serial.print('n');
+           
+        analogWrite(ledPin6,temppin);
+        delay(2000);
+  
+  //dht.humidity().getEvent(&event);
+
+    hum= dht.readHumidity();
+       // Normalise values based on testing of needles on voltmeters 
+        float humnormalized = (((float(hum)-20)/60) * 251.0);
+        round(humnormalized);
+        int humpin = humnormalized;
+        Serial.print("%h");
+        Serial.print(hum);
+        Serial.print('\n');
+        
+        //read data on meter 3  
+        analogWrite(ledPin3,humpin);  
+ Serial.print("mb:");
+ Serial.print(sum_p[0]);
+ Serial.print('\n');
+ Serial.print("Diff:");     
+ Serial.print(dif_p3);
+ Serial.print('\n');
+sendNTPpacket(timeServer); // send an NTP packet to a time server
+  
+  // wait for a reply for UDP_TIMEOUT miliseconds
+  unsigned long startMs = millis();
+  while (!Udp.available() && (millis() - startMs) < UDP_TIMEOUT) {}
+
+  Serial.println(Udp.parsePacket());
+  if (Udp.parsePacket()) {
+    Serial.println("packet received");
+    // We've received a packet, read the data from it into the buffer
+    Udp.read(packetBuffer, NTP_PACKET_SIZE);
+
+    // the timestamp starts at byte 40 of the received packet and is four bytes,
+    // or two words, long. First, esxtract the two words:
+
+    unsigned long highWord = word(packetBuffer[40], packetBuffer[41]);
+    unsigned long lowWord = word(packetBuffer[42], packetBuffer[43]);
+    // combine the four bytes (two words) into a long integer
+    // this is NTP time (seconds since Jan 1 1900):
+    unsigned long secsSince1900 = highWord << 16 | lowWord;
+    Serial.print("Seconds since Jan 1 1900 = ");
+    Serial.println(secsSince1900);
+
+    // now convert NTP time into everyday time:
+    Serial.print("Unix time = ");
+    // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
+    const unsigned long seventyYears = 2208988800UL;
+    // subtract seventy years:
+    unsigned long epoch = secsSince1900 - seventyYears;
+    // print Unix time:
+    Serial.println(epoch);
+
+
+    // print the hour, minute and second:
+    Serial.print("The UTC time is ");       // UTC is the time at Greenwich Meridian (GMT)
+    Serial.print((epoch  % 86400L) / 3600); // print the hour (86400 equals secs per day)
+    timeutc=((epoch  % 86400L) / 3600);
+    Serial.print(':');
+    if (((epoch % 3600) / 60) < 10) {
+      // In the first 10 minutes of each hour, we'll want a leading '0'
+      Serial.print('0');
+    }
+     
+    // print the minute (3600 equals secs per minute)
+    Serial.print(':');
+    if ((epoch % 60) < 10) {
+      // In the first 10 seconds of each minute, we'll want a leading '0'
+      Serial.print('0');
+    }
+    Serial.println(epoch % 60); // print the second
+  }
+// Evalute the UTC hour and toggle LEDS
+          Serial.print("hourutc:");
+        Serial.print(timeutc);
+        Serial.print('\n');
+        if (timeutc > 2 and timeutc < 7) 
+        {digitalWrite(14,HIGH);
+         digitalWrite(15,HIGH);
+          digitalWrite(16,HIGH);
+           digitalWrite(17,HIGH);}
+        else
+        {digitalWrite(14,LOW);
+        digitalWrite(15,LOW);
+        digitalWrite(16,LOW);
+        digitalWrite(17,LOW);
+        }
+  delay(10000);
+//can choose between dif_p1, dif_p3, dif_10 for diffrent pressure delta readings
+for(i=59;i>0;i--)
+    sum_p[i] = sum_p[i-1];
+
+    if (dif_p3 > 1.6) {
+   analogWrite(ledPin11,230);
+    }
+   if (dif_p3 < -1.6) {
+   analogWrite(ledPin11,29);
+  
+   }
+   if (dif_p3 > -1.6 && dif_p3 < 1.6) {
+   analogWrite(ledPin11,13);
+   }
+   
+}   
+
+
+// send an NTP request to the time server at the given address
+void sendNTPpacket(char *ntpSrv)
+{
+  // set all bytes in the buffer to 0
+  memset(packetBuffer, 0, NTP_PACKET_SIZE);
+  // Initialize values needed to form NTP request
+  // (see URL above for details on the packets)
+
+  packetBuffer[0] = 0b11100011;   // LI, Version, Mode
+  packetBuffer[1] = 0;     // Stratum, or type of clock
+  packetBuffer[2] = 6;     // Polling Interval
+  packetBuffer[3] = 0xEC;  // Peer Clock Precision
+  // 8 bytes of zero for Root Delay & Root Dispersion
+  packetBuffer[12]  = 49;
+  packetBuffer[13]  = 0x4E;
+  packetBuffer[14]  = 49;
+  packetBuffer[15]  = 52;
+
+  // all NTP fields have been given values, now
+  // you can send a packet requesting a timestamp:
+  Udp.beginPacket(ntpSrv, 123); //NTP requests are to port 123
+
+  Udp.write(packetBuffer, NTP_PACKET_SIZE);
+
+  Udp.endPacket();
+
+  
+
+}
